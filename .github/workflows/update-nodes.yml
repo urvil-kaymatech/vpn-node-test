@@ -1,0 +1,59 @@
+name: Update Verified Proxy Nodes
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-nodes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache sing-box
+        id: cache-singbox
+        uses: actions/cache@v4
+        with:
+          path: .singbox-bin
+          key: sing-box-1.11.4-linux-amd64
+
+      - name: Download sing-box 1.11.4
+        if: steps.cache-singbox.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p .singbox-bin
+          curl -fsSL "https://github.com/SagerNet/sing-box/releases/download/v1.11.4/sing-box-1.11.4-linux-amd64.tar.gz" -o sing-box.tar.gz
+          tar -xzf sing-box.tar.gz
+          cp sing-box-1.11.4-linux-amd64/sing-box .singbox-bin/sing-box
+          chmod +x .singbox-bin/sing-box
+
+      - name: Verify community proxy nodes
+        run: |
+          python3 scripts/verify_nodes.py \
+            --singbox .singbox-bin/sing-box \
+            --output vpn-servers.txt \
+            --max-candidates 250 \
+            --max-output 60 \
+            --per-country 3 \
+            --workers 20
+
+      - name: Commit updated vpn-servers.txt
+        run: |
+          if [ -f vpn-servers.txt ] && [ -n "$(git status --porcelain vpn-servers.txt)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add vpn-servers.txt
+            git commit -m "chore: update verified proxy nodes"
+            git push
+          else
+            echo "No changes to vpn-servers.txt"
+          fi
